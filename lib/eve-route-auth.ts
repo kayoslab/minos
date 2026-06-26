@@ -101,6 +101,15 @@ function buildAuthContext(token: string, payload: JWTPayload) {
     principalType: "user" as const,
     attributes: {
       client_id: agentClientId!,
+      // The connection's getToken needs the access token, but Vercel
+      // functions don't share memory across invocations — the
+      // process-local token cache in token-store.ts misses whenever
+      // the connection runs on a different Lambda instance than the
+      // route auth. Carry it through the principal attributes so the
+      // connection can read it from the request context directly.
+      access_token: token,
+      access_token_exp:
+        typeof payload.exp === "number" ? String(payload.exp) : "",
       ...(typeof payload.username === "string"
         ? { username: payload.username }
         : {}),

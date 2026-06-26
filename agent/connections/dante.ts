@@ -136,8 +136,36 @@ export default defineOpenAPIConnection({
      * generated OpenAPI operations we don't have an `execute` to
      * patch — the connection's invariant is "if Cognito accepted the
      * token at issuance, it stays valid for the access-token
-     * lifetime", and the proactive refresh below covers the rest. */
+     * lifetime", and the proactive refresh below covers the rest.
+     *
+     * Token resolution order:
+     *   1. The channel auth (lib/eve-route-auth.ts) stuffs the
+     *      verified access token into the principal's attributes.
+     *      Vercel functions don't share process memory across
+     *      invocations, so the process-local token cache in
+     *      token-store.ts is unreliable. The attributes ride with
+     *      the request context and DO survive.
+     *   2. Falls back to the cache (populated by the interactive
+     *      OAuth flow below). Useful when the caller came in via
+     *      `cognitoBearer()` without a session cookie — same Lambda
+     *      instance handles both ends.
+     *   3. Falls back to triggering the interactive OAuth flow
+     *      (`startAuthorization` → user clicks the URL → Cognito
+     *      hosts MFA → callback → cache populated). */
     async getToken({ principal }) {
+      if (principal.type === "user") {
+        const attrs = principal.attributes ?? {};
+        const at = attrs.access_token;
+        const exp = attrs.access_token_exp;
+        if (typeof at === "string" && at.length > 0) {
+          const expiresAt =
+            typeof exp === "string" && /^\d+$/.test(exp)
+              ? Number(exp) * 1000
+              : Date.now() + 60_000;
+          return { token: at, expiresAt };
+        }
+      }
+
       const cached = getCachedToken(userId(principal));
       if (!cached) {
         throw new ConnectionAuthorizationRequiredError(CONNECTION_NAME);
