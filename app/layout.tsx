@@ -20,6 +20,19 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <style
+          // Keyframes can't ride inline style props; they need a
+          // rule. CSP allows 'unsafe-inline' for styles so a static
+          // tag here is fine.
+          dangerouslySetInnerHTML={{
+            __html: `@keyframes dante-dot-pulse {
+              0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+              40% { opacity: 1; transform: scale(1); }
+            }`,
+          }}
+        />
+      </head>
       <body
         style={{
           margin: 0,
@@ -27,7 +40,6 @@ export default function RootLayout({
             "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
           background: "#0b0d12",
           color: "#e7eaf0",
-          minHeight: "100vh",
         }}
       >
         {children}

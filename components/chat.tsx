@@ -47,10 +47,16 @@ export function Chat({ userName }: { userName: string }) {
       style={{
         maxWidth: 880,
         margin: "0 auto",
-        padding: "1rem 1.25rem 2rem",
-        minHeight: "100vh",
+        padding: "1rem 1.25rem",
+        // Hard 100vh + dvh fallback for mobile browsers whose URL bar
+        // collapses 100vh past the viewport — without this the input
+        // sits below the bottom edge and the Send button can't be
+        // clicked. `height` (not minHeight) bounds the flex column so
+        // the transcript scrolls internally, not the page.
+        height: "100dvh",
         display: "flex",
         flexDirection: "column",
+        overflow: "hidden",
       }}
     >
       <header
@@ -60,6 +66,7 @@ export function Chat({ userName }: { userName: string }) {
           alignItems: "baseline",
           paddingBottom: "1rem",
           borderBottom: "1px solid #232831",
+          flexShrink: 0,
         }}
       >
         <div>
@@ -100,6 +107,7 @@ export function Chat({ userName }: { userName: string }) {
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           padding: "1.25rem 0",
           display: "flex",
@@ -117,6 +125,7 @@ export function Chat({ userName }: { userName: string }) {
         {agent.data.messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
+        {isBusy && <ThinkingIndicator status={agent.status} />}
         {pendingConnectionAuth && (
           <ConnectionPrompt request={pendingConnectionAuth} />
         )}
@@ -148,7 +157,14 @@ export function Chat({ userName }: { userName: string }) {
         )}
       </div>
 
-      <form onSubmit={onSubmit} style={{ paddingTop: "1rem" }}>
+      <form
+        onSubmit={onSubmit}
+        style={{
+          paddingTop: "1rem",
+          flexShrink: 0,
+          borderTop: "1px solid #232831",
+        }}
+      >
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <input
             value={draft}
@@ -157,6 +173,7 @@ export function Chat({ userName }: { userName: string }) {
             placeholder="Ask Dante…"
             style={{
               flex: 1,
+              minWidth: 0,
               padding: "0.85rem 1rem",
               background: "#13161e",
               border: "1px solid #2c3340",
@@ -177,6 +194,7 @@ export function Chat({ userName }: { userName: string }) {
               fontSize: "0.95rem",
               fontWeight: 600,
               cursor: isBusy ? "not-allowed" : "pointer",
+              flexShrink: 0,
             }}
           >
             {isBusy ? "…" : "Send"}
@@ -184,6 +202,57 @@ export function Chat({ userName }: { userName: string }) {
         </div>
       </form>
     </main>
+  );
+}
+
+function ThinkingIndicator({ status }: { status: string }) {
+  const label = status === "submitted" ? "Thinking" : "Responding";
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        alignSelf: "flex-start",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.6rem",
+        padding: "0.6rem 0.9rem",
+        background: "#13161e",
+        border: "1px solid #232831",
+        borderRadius: 12,
+        color: "#8d94a3",
+        fontSize: "0.85rem",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "inline-flex",
+          gap: "3px",
+        }}
+      >
+        <Dot delay="0s" />
+        <Dot delay="0.15s" />
+        <Dot delay="0.3s" />
+      </span>
+      {label}…
+    </div>
+  );
+}
+
+function Dot({ delay }: { delay: string }) {
+  return (
+    <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        background: "#5b6473",
+        animation: "dante-dot-pulse 1s infinite ease-in-out",
+        animationDelay: delay,
+        display: "inline-block",
+      }}
+    />
   );
 }
 
