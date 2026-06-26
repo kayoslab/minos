@@ -7,9 +7,9 @@
     "#evals/*": "./evals/*"
   },
   "scripts": {
-    "build": "eve build",
-    "dev": "eve dev",
-    "start": "eve start",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "typecheck": "tsc"
   },
   "dependencies": {
@@ -17,11 +17,16 @@
     "ai": "^7.0.0",
     "eve": "^0.14.0",
     "jose": "^6.2.3",
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.x",
-    "typescript": "7.0.1-rc"
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
   },
   "overrides": {
     "ai": "^7.0.0"

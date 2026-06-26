@@ -1,41 +1,24 @@
 import { eveChannel } from "eve/channels/eve";
-import { localDev, vercelOidc } from "eve/channels/auth";
+import { localDev } from "eve/channels/auth";
 
-import { cognitoAccessToken } from "#lib/cognito-auth.js";
+import { sessionCookie, cognitoBearer } from "@/lib/eve-route-auth";
 
 /** Route auth for `/eve/v1/session*` and friends.
  *
- * Walk order matters — each entry that doesn't recognize the caller
- * returns null and the walk falls through to the next. First match
- * wins.
+ * Walk order — first match wins, each `null` falls through:
  *
- *   localDev()           — loopback hostname → synthetic local-dev
- *                          principal. Used by `eve dev` + the TUI on
- *                          the same machine.
- *   vercelOidc()         — Vercel-issued OIDC bearer. Used by Vercel's
- *                          own TUI/CLI talking to a deployed agent,
- *                          and by any Vercel-to-Vercel traffic.
- *   cognitoAccessToken() — Cognito agent app client access token,
- *                          presented as Authorization: Bearer.
- *                          Same token the agent re-uses on the
- *                          outbound Dante connection — one sign-in,
- *                          one consent, one token covers both ends.
+ *   1. `localDev()` — loopback hostname (TUI on the same machine).
+ *   2. `sessionCookie()` — the browser chat. Auth.js cookie carries
+ *      a verified Cognito access token; we extract + re-verify.
+ *   3. `cognitoBearer()` — `Authorization: Bearer <token>` for the
+ *      one-shot test script and machine callers.
+ *
+ * Both 2 and 3 land on the SAME Cognito access token and, as a side
+ * effect, populate the Dante connection's token cache so a
+ * downstream tool call doesn't re-OAuth. One user sign-in → both
+ * the EVE route and the outbound Dante call are authorized.
  *
  * No `placeholderAuth()` and no `none()`. */
-const issuer = process.env.DANTE_COGNITO_ISSUER;
-const agentClientId = process.env.DANTE_COGNITO_AGENT_CLIENT_ID;
-if (!issuer || !agentClientId) {
-  throw new Error(
-    "DANTE_COGNITO_ISSUER and DANTE_COGNITO_AGENT_CLIENT_ID must be set " +
-      "on the Vercel project (Production scope). They are read at boot " +
-      "by the route-auth walk.",
-  );
-}
-
 export default eveChannel({
-  auth: [
-    localDev(),
-    vercelOidc(),
-    cognitoAccessToken({ issuer, agentClientId }),
-  ],
+  auth: [localDev(), sessionCookie(), cognitoBearer()],
 });
