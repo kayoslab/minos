@@ -41,6 +41,7 @@ import {
   defineInteractiveAuthorization,
   defineOpenAPIConnection,
 } from "eve/connections";
+import type { Approval } from "eve/tools/approval";
 
 import {
   buildAuthorizeUrl,
@@ -87,6 +88,17 @@ const REQUESTED_SCOPES = [
   "dante-agents/read:reports",
   "dante-agents/read:employees",
   "dante-agents/read:salaries",
+  // Write scopes for the PDF-ingestion workflows (framework, PO,
+  // freelancer bill). Always requested at /authorize; the Pre Token
+  // Generation Lambda strips anything the user's group doesn't
+  // permit (only admin + manager carry write:* in the issued token).
+  // Keep this list in sync with the matching arrays in
+  // app/api/auth/signin/route.ts and Dante's lib/auth/agent-scopes.ts.
+  "dante-agents/write:customers",
+  "dante-agents/write:frameworks",
+  "dante-agents/write:projects",
+  "dante-agents/write:allocations",
+  "dante-agents/write:time_tracking",
 ] as const;
 
 /** Refresh proactively when the cached access token is within this
@@ -114,13 +126,48 @@ function userId(principal: ConnectionPrincipal): string {
   return principal.id;
 }
 
+/** HITL approval gate.
+ *
+ * Reads pass straight through (no approval); writes ALWAYS pause for
+ * explicit user confirmation in the chat UI. This is the second wall
+ * of defense around the writes — the Cognito scope grant gives the
+ * token the *capability* to call a write tool; this policy stops the
+ * model from actually executing one without a person clicking
+ * "Confirm". With RDS point-in-time recovery still disabled on prod,
+ * the HITL gate is the rollback story. Do not loosen this without
+ * restoring backups first.
+ *
+ * Generated OpenAPI tools land in the model under the
+ * `dante__<operationId>` naming scheme — see lib/agent/operation.ts
+ * in the Dante backend. We use a prefix-based match so future write
+ * operations are auto-gated by their operationId; the convention is
+ * that anything mutating starts with one of these verbs. */
+const WRITE_TOOL_PREFIXES = [
+  "dante__create",
+  "dante__update",
+  "dante__set",
+  "dante__upsert",
+  "dante__extend",
+  "dante__delete",
+] as const;
+
+const danteWriteApproval: Approval = ({ toolName }) => {
+  if (typeof toolName !== "string") return "not-applicable";
+  for (const p of WRITE_TOOL_PREFIXES) {
+    if (toolName.startsWith(p)) return "user-approval";
+  }
+  return "not-applicable";
+};
+
 export default defineOpenAPIConnection({
   description:
-    "Dante: read-only project, customer, and rentability data for the " +
-    "act digital consulting practice. Use to answer questions about " +
-    "active projects, monthly P&L, and customer rentability. Requires " +
-    "the caller to sign in to Dante via Cognito; the issued token's " +
-    "scope set determines which operations are callable.",
+    "Dante: project, customer, allocation, and rentability data for " +
+    "the act digital consulting practice. READ tools answer questions " +
+    "about active projects, monthly P&L, and customer rentability. " +
+    "WRITE tools ingest framework agreements, purchase orders, and " +
+    "freelancer bills into Dante — they ALWAYS park the run for an " +
+    "explicit user confirmation card before executing.",
+  approval: danteWriteApproval,
   // Fetched at agent build/runtime. Update Dante → next EVE build picks
   // up the new operations automatically.
   spec: `${DANTE_API_BASE_URL}/api/agent/openapi.json`,
