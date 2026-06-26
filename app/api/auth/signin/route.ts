@@ -1,6 +1,10 @@
 /** Sign-in: generate PKCE, stash verifier+state in a short-lived
- * cookie, redirect to Cognito's hosted UI. */
-import { cookies } from "next/headers";
+ * cookie attached DIRECTLY to the redirect response, redirect to
+ * Cognito's hosted UI.
+ *
+ * See the matching comment on `callback/route.ts` for why we don't
+ * use `cookies().set()` + a separately-built redirect: mutations on
+ * `cookies()` don't ride along on a fresh `NextResponse.redirect`. */
 import { NextResponse } from "next/server";
 
 import {
@@ -23,6 +27,14 @@ const PENDING_COOKIE =
     ? "__Host-dante-oauth-pending"
     : "dante-oauth-pending";
 
+const PENDING_OPTS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 600,
+};
+
 export async function GET(req: Request) {
   const cognitoDomain = process.env.DANTE_COGNITO_DOMAIN;
   const clientId = process.env.DANTE_COGNITO_AGENT_CLIENT_ID;
@@ -36,18 +48,6 @@ export async function GET(req: Request) {
   const { verifier, challenge } = generatePkce();
   const state = generateState();
 
-  const c = await cookies();
-  // Short-lived cookie carrying the verifier + state. Read once on
-  // the callback and immediately cleared. httpOnly + SameSite=Lax so
-  // it survives the Cognito round-trip redirect.
-  c.set(PENDING_COOKIE, JSON.stringify({ verifier, state }), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 600,
-  });
-
   const callbackUrl = new URL("/api/auth/callback", req.url).toString();
   const authorize = buildAuthorizeUrl({
     cognitoDomain,
@@ -58,5 +58,14 @@ export async function GET(req: Request) {
     codeChallenge: challenge,
   });
 
-  return NextResponse.redirect(authorize);
+  // Attach the pending cookie DIRECTLY to the redirect response. A
+  // `cookies().set` mutation is silently dropped on a fresh
+  // `NextResponse.redirect`.
+  const response = NextResponse.redirect(authorize);
+  response.cookies.set(
+    PENDING_COOKIE,
+    JSON.stringify({ verifier, state }),
+    PENDING_OPTS,
+  );
+  return response;
 }

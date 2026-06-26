@@ -111,7 +111,7 @@ function userId(principal: ConnectionPrincipal): string {
       retryable: false,
     });
   }
-  return userId(principal);
+  return principal.id;
 }
 
 export default defineOpenAPIConnection({

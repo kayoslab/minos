@@ -6,24 +6,39 @@
  * bundle boundary must only depend on jose + the Node standard
  * library.
  *
- * `lib/session.ts` (the Next-side facade) re-uses the encrypt /
- * decrypt primitives here and adds the `cookies()`-based read/write
- * helpers Next.js pages and route handlers want. */
+ * The browser session is split across TWO cookies:
+ *   - `__Host-dante-session` — small JWE holding the *identity*
+ *     (cognito_sub, email) and the *refresh token*. ~1 KB after
+ *     encryption.
+ *   - `__Host-dante-at` — the raw Cognito access token JWT,
+ *     ~1.5–2 KB. Already signed by Cognito; no extra encryption.
+ *     httpOnly + Secure + SameSite=Lax + Path=/ — same hardening as
+ *     the session cookie.
+ *
+ * Why split: a single combined JWE blob lands ~4.5 KB, which the
+ * browser silently drops (per-cookie 4 KB limit). Keeping the
+ * tokens in separate cookies fits each under the limit. */
 import { createHash } from "node:crypto";
 
 import { EncryptJWT, jwtDecrypt } from "jose";
 
-export const SESSION_COOKIE_NAME =
-  process.env.NODE_ENV === "production"
-    ? "__Host-dante-session"
-    : "dante-session";
+const isProd = process.env.NODE_ENV === "production";
+
+export const SESSION_COOKIE_NAME = isProd
+  ? "__Host-dante-session"
+  : "dante-session";
+
+export const ACCESS_TOKEN_COOKIE_NAME = isProd
+  ? "__Host-dante-at"
+  : "dante-at";
 
 export type Session = {
   cognito_sub: string;
   email?: string;
-  access_token: string;
   refresh_token: string;
-  /** Unix seconds. */
+  /** Unix seconds when the session itself expires (cookie max-age
+   * relative anchor). Not tied to the access token's exp — that's
+   * tracked on the access-token cookie's own max-age. */
   expires_at: number;
 };
 
@@ -61,17 +76,31 @@ export async function decryptSession(raw: string): Promise<Session | null> {
   }
 }
 
-/** Parse a `Cookie` request header and return the value of
- * `SESSION_COOKIE_NAME`, or null if absent. */
-export function readSessionCookieFromHeader(
+function readCookieFromHeader(
   cookieHeader: string | null,
+  name: string,
 ): string | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const [k, ...rest] = part.split("=");
-    if (k?.trim() === SESSION_COOKIE_NAME) {
+    if (k?.trim() === name) {
       return decodeURIComponent(rest.join("=").trim());
     }
   }
   return null;
+}
+
+/** Read `__Host-dante-session` off a raw `Cookie` request header. */
+export function readSessionCookieFromHeader(
+  cookieHeader: string | null,
+): string | null {
+  return readCookieFromHeader(cookieHeader, SESSION_COOKIE_NAME);
+}
+
+/** Read `__Host-dante-at` (the raw Cognito access token JWT) off a
+ * raw `Cookie` request header. */
+export function readAccessTokenFromHeader(
+  cookieHeader: string | null,
+): string | null {
+  return readCookieFromHeader(cookieHeader, ACCESS_TOKEN_COOKIE_NAME);
 }

@@ -1,22 +1,54 @@
-/** OAuth callback: validate state, exchange code for tokens, set the
- * session cookie, redirect to /chat. Any failure mode redirects to
- * /login with an opaque error message. */
+/** OAuth callback: validate state, exchange code for tokens, set
+ * BOTH session cookies on the redirect response directly, then
+ * redirect to /chat.
+ *
+ * Cookies are split across two names — see `lib/session-core.ts` for
+ * why. Setting them via `cookies().set()` from `next/headers` and
+ * returning a fresh `NextResponse.redirect()` silently drops the
+ * Set-Cookie header, so we attach them to the response object
+ * directly. */
 import { decodeJwt } from "jose";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { exchangeCodeForToken } from "@/agent/lib/cognito-pkce";
-import { setSessionCookie } from "@/lib/session";
+import {
+  ACCESS_TOKEN_COOKIE_NAME,
+  encryptSession,
+  SESSION_COOKIE_NAME,
+} from "@/lib/session-core";
 
 const PENDING_COOKIE =
   process.env.NODE_ENV === "production"
     ? "__Host-dante-oauth-pending"
     : "dante-oauth-pending";
 
+const isProd = process.env.NODE_ENV === "production";
+
+const SESSION_COOKIE_OPTS = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 60 * 24 * 7,
+};
+
+function accessTokenCookieOpts(maxAgeSec: number) {
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: maxAgeSec,
+  };
+}
+
 function bounceToLogin(req: Request, reason: string) {
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     new URL(`/login?error=${encodeURIComponent(reason)}`, req.url),
   );
+  response.cookies.set(PENDING_COOKIE, "", { maxAge: 0, path: "/" });
+  return response;
 }
 
 export async function GET(req: Request) {
@@ -38,7 +70,6 @@ export async function GET(req: Request) {
   } catch {
     return bounceToLogin(req, "corrupt_state");
   }
-  c.delete(PENDING_COOKIE);
 
   if (
     !pending.verifier ||
@@ -72,10 +103,6 @@ export async function GET(req: Request) {
     return bounceToLogin(req, "no_refresh_token");
   }
 
-  // Decode the access token UNVERIFIED here — Cognito just minted it
-  // so verification is unnecessary; the channel AuthFn re-verifies
-  // against JWKS on every EVE call. We only need `sub` (+ optional
-  // username) for the session metadata.
   let payload: { sub?: string; username?: string; email?: string };
   try {
     payload = decodeJwt(tokens.access_token) as typeof payload;
@@ -86,13 +113,20 @@ export async function GET(req: Request) {
     return bounceToLogin(req, "missing_sub");
   }
 
-  await setSessionCookie({
+  const sessionToken = await encryptSession({
     cognito_sub: payload.sub,
     email: payload.username ?? payload.email,
-    access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
+    expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
   });
 
-  return NextResponse.redirect(new URL("/chat", req.url));
+  const response = NextResponse.redirect(new URL("/chat", req.url));
+  response.cookies.set(SESSION_COOKIE_NAME, sessionToken, SESSION_COOKIE_OPTS);
+  response.cookies.set(
+    ACCESS_TOKEN_COOKIE_NAME,
+    tokens.access_token,
+    accessTokenCookieOpts(tokens.expires_in),
+  );
+  response.cookies.set(PENDING_COOKIE, "", { maxAge: 0, path: "/" });
+  return response;
 }

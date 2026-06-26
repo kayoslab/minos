@@ -28,10 +28,7 @@ import {
 } from "jose";
 import type { AuthFn } from "eve/channels/auth";
 
-import {
-  decryptSession,
-  readSessionCookieFromHeader,
-} from "@/lib/session-core";
+import { readAccessTokenFromHeader } from "@/lib/session-core";
 import { putCachedToken } from "@/agent/lib/token-store";
 
 const issuer = process.env.DANTE_COGNITO_ISSUER;
@@ -125,24 +122,21 @@ export function cognitoBearer(): AuthFn<Request> {
   };
 }
 
-/** Cookie path. Read the session cookie OFF THE REQUEST directly —
- * we can't import `next/headers` here because EVE bundles channel
- * code with its own bundler (Nitro) that doesn't resolve Next
- * helpers. Same encryption format as `lib/session.ts`'s
- * `setSessionCookie`; both use `lib/session-core.ts`. */
+/** Cookie path. The access token rides in its own cookie
+ * (`__Host-dante-at`), holding the raw Cognito-signed JWT. We
+ * read it off the request directly — can't import `next/headers`
+ * because EVE bundles channel code with its own bundler (Nitro)
+ * that doesn't resolve Next helpers.
+ *
+ * If the cookie is missing or its token is expired, we return null
+ * and the walk falls through to 401. The browser then hits a Next
+ * page, `getAccessToken()` refreshes via the session cookie's
+ * refresh token, the new access token is written back to the
+ * cookie, and the next EVE call succeeds. */
 export function sessionCookie(): AuthFn<Request> {
   return async (request) => {
-    const raw = readSessionCookieFromHeader(request.headers.get("cookie"));
-    if (!raw) return null;
-    const session = await decryptSession(raw);
-    if (!session) return null;
-    // The session cookie's access token might be near-expiry; we
-    // don't refresh in the route-auth path (refresh is the Next
-    // pages' job via `getSession()`). If it IS expired, JWKS
-    // verification fails and we fall through to 401 — the browser
-    // then hits a Next page → getSession() refreshes → next EVE
-    // call works.
-    const token = session.access_token;
+    const token = readAccessTokenFromHeader(request.headers.get("cookie"));
+    if (!token) return null;
     const payload = await verifyCognitoAccessToken(token);
     if (!payload) return null;
     return buildAuthContext(token, payload);

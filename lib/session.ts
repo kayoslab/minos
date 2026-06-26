@@ -3,9 +3,11 @@
  * Anything that crosses the EVE bundle boundary (e.g. the channel
  * AuthFn) must NOT import from here — use `lib/session-core.ts`
  * directly. EVE's bundler doesn't resolve `next/headers`. */
+import { decodeJwt } from "jose";
 import { cookies } from "next/headers";
 
 import {
+  ACCESS_TOKEN_COOKIE_NAME,
   decryptSession,
   encryptSession,
   SESSION_COOKIE_NAME,
@@ -14,7 +16,7 @@ import {
 
 export type { Session } from "./session-core";
 
-const COOKIE_OPTS = {
+const SESSION_COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
@@ -22,18 +24,28 @@ const COOKIE_OPTS = {
   maxAge: 60 * 60 * 24 * 7,
 };
 
+function accessTokenCookieOpts(maxAgeSec: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: maxAgeSec,
+  };
+}
+
 export async function setSessionCookie(s: Session): Promise<void> {
   const c = await cookies();
   const token = await encryptSession(s);
-  c.set(SESSION_COOKIE_NAME, token, COOKIE_OPTS);
+  c.set(SESSION_COOKIE_NAME, token, SESSION_COOKIE_OPTS);
 }
 
 export async function clearSessionCookie(): Promise<void> {
   const c = await cookies();
   c.delete(SESSION_COOKIE_NAME);
+  c.delete(ACCESS_TOKEN_COOKIE_NAME);
 }
 
-/** Refresh a Cognito access token via the refresh token. */
 async function refreshAccessToken(
   refreshToken: string,
 ): Promise<{ access_token: string; expires_in: number } | null> {
@@ -62,30 +74,46 @@ async function refreshAccessToken(
   }
 }
 
-/** Read and (if needed) refresh the session. Returns null when not
- * signed in or when refresh has failed. */
+/** Return the signed-in user's session, or null. Does NOT refresh
+ * the access token — the access token rides in its own cookie and
+ * its expiry is tracked there. Use `getAccessToken()` to obtain
+ * (and lazy-refresh) the bearer. */
 export async function getSession(): Promise<Session | null> {
   const c = await cookies();
   const raw = c.get(SESSION_COOKIE_NAME)?.value;
   if (!raw) return null;
-  const session = await decryptSession(raw);
+  return decryptSession(raw);
+}
+
+/** Return a current Cognito access token, refreshing via the
+ * refresh token in the session cookie if the access-token cookie is
+ * missing, expired, or near-expiry. Updates the access-token cookie
+ * on refresh. Returns null when the session is missing or refresh
+ * fails. */
+export async function getAccessToken(): Promise<string | null> {
+  const c = await cookies();
+  const at = c.get(ACCESS_TOKEN_COOKIE_NAME)?.value;
+  if (at) {
+    try {
+      const payload = decodeJwt(at);
+      if (typeof payload.exp === "number" && payload.exp * 1000 > Date.now() + 30_000) {
+        return at;
+      }
+    } catch {
+      // fall through to refresh
+    }
+  }
+
+  const session = await getSession();
   if (!session) return null;
 
-  const now = Math.floor(Date.now() / 1000);
-  if (now < session.expires_at - 30) {
-    return session;
-  }
-
   const refreshed = await refreshAccessToken(session.refresh_token);
-  if (!refreshed) {
-    await clearSessionCookie();
-    return null;
-  }
-  const updated: Session = {
-    ...session,
-    access_token: refreshed.access_token,
-    expires_at: now + refreshed.expires_in,
-  };
-  await setSessionCookie(updated);
-  return updated;
+  if (!refreshed) return null;
+
+  c.set(
+    ACCESS_TOKEN_COOKIE_NAME,
+    refreshed.access_token,
+    accessTokenCookieOpts(refreshed.expires_in),
+  );
+  return refreshed.access_token;
 }
