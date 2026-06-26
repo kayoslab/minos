@@ -40,6 +40,11 @@ export default function RootLayout({
             "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
           background: "#0b0d12",
           color: "#e7eaf0",
+          // No body scroll — the chat manages its own scrollable
+          // transcript area. Anchoring the chat to the visible
+          // viewport requires html/body to be exactly viewport-sized.
+          height: "100%",
+          overflow: "hidden",
         }}
       >
         {children}
