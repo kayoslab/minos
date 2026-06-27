@@ -43,9 +43,17 @@ export async function POST(request: Request): Promise<NextResponse> {
         if (!session) {
           throw new Error("Not signed in.");
         }
-        if (!pathname.startsWith(`uploads/${session.cognito_sub}/`)) {
+        // Pathname comes from the browser via `upload(pathname, ...)`
+        // — we don't ask the client to embed the cognito_sub because
+        // the client doesn't know it. The security boundary is the
+        // session check above (only signed-in users can mint a
+        // token) plus the `uploads/` prefix (so a misbehaving client
+        // can't stomp on framework paths). Vercel adds a random
+        // suffix to the stored blob path so cross-user filename
+        // collisions are a non-issue.
+        if (!pathname.startsWith("uploads/")) {
           throw new Error(
-            `Disallowed upload pathname — must start with uploads/${session.cognito_sub}/.`,
+            "Disallowed upload pathname — must start with uploads/.",
           );
         }
         return {
