@@ -59,6 +59,13 @@ export async function POST(request: Request): Promise<NextResponse> {
         return {
           allowedContentTypes: ALLOWED_TYPES,
           maximumSizeInBytes: MAX_BYTES,
+          // Re-uploading the same filename (e.g. dragging the same
+          // PDF into chat twice during a back-and-forth) must
+          // succeed silently — the model only ever sees the latest
+          // URL anyway. Without this, the second upload fails with
+          // "blob with the same pathname already exists." A daily
+          // cron at /api/cron/cleanup-uploads handles retention.
+          allowOverwrite: true,
           // Carry the principal through so the completion callback
           // could (in future) audit-log who uploaded what without
           // re-reading the cookie.
