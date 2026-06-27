@@ -61,7 +61,15 @@ function buildCsp(isDev: boolean): { csp: string; nonce: string } {
     // EVE talks to same-origin /eve/v1/* (SSE); Cognito and Dante
     // talk through server-side fetches that don't hit the browser's
     // connect-src budget. Allow ws: only in dev for HMR.
-    `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
+    //
+    // Vercel Blob: the client `upload()` mints a token via our
+    // /api/upload (same-origin, covered by 'self'), then PUTs the
+    // bytes DIRECTLY to a Vercel-hosted blob origin. Without an
+    // explicit allow, the browser silently drops the PUT and the
+    // upload hangs at "Uploading…". The wildcard covers both
+    // `*.public.blob.vercel-storage.com` (stored blob URLs) and the
+    // generic `blob.vercel-storage.com` upload endpoint.
+    `connect-src 'self' https://*.public.blob.vercel-storage.com https://blob.vercel-storage.com${isDev ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self' https://auth.dante.actdigital.eu",
