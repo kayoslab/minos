@@ -26,6 +26,8 @@ const PUBLIC_PREFIXES = [
   //              second-phase completion callback from Blob (no cookie);
   //              the route's own onBeforeGenerateToken gates token
   //              generation on a valid session.
+  "/api/cron", // Vercel Cron jobs — no session cookie; routes verify
+  //              `Authorization: Bearer $CRON_SECRET` themselves.
   "/eve/v1", // EVE channel (its own auth walk applies)
   "/_next", // Next.js static assets
   "/favicon", // /favicon.ico
