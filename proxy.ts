@@ -22,6 +22,10 @@ const PUBLIC_PATHS = ["/login"];
 
 const PUBLIC_PREFIXES = [
   "/api/auth", // Auth.js endpoints
+  "/api/upload", // Vercel Blob direct-upload route — must accept the
+  //              second-phase completion callback from Blob (no cookie);
+  //              the route's own onBeforeGenerateToken gates token
+  //              generation on a valid session.
   "/eve/v1", // EVE channel (its own auth walk applies)
   "/_next", // Next.js static assets
   "/favicon", // /favicon.ico

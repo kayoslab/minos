@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useEveAgent } from "eve/react";
+import { upload } from "@vercel/blob/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -9,25 +10,96 @@ import { HitlRequest } from "./hitl-request";
 import { ConnectionPrompt } from "./connection-prompt";
 import { SignOutButton } from "./sign-out-button";
 
+type StagedPdf = {
+  url: string;
+  filename: string;
+  bytes: number;
+};
+
 /** Browser chat against the EVE agent. Same-origin via withEve(), so
  * the session cookie rides on every /eve/v1/* request — no explicit
  * credential plumbing on the client. */
 export function Chat({ userName }: { userName: string }) {
   const agent = useEveAgent();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
+  const [staged, setStaged] = useState<StagedPdf | null>(null);
+  const [uploadState, setUploadState] = useState<
+    { kind: "idle" } | { kind: "uploading"; filename: string } | { kind: "error"; message: string }
+  >({ kind: "idle" });
   const isBusy =
     agent.status === "submitted" || agent.status === "streaming";
 
   const pendingHitl = findPendingHitlRequest(agent.data.messages);
   const pendingConnectionAuth = findPendingConnectionAuth(agent.events);
 
+  const onPickFile = () => {
+    if (isBusy || uploadState.kind === "uploading") return;
+    fileInputRef.current?.click();
+  };
+
+  const onFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset so picking the same file twice re-triggers
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      setUploadState({ kind: "error", message: "Only PDFs are supported." });
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setUploadState({
+        kind: "error",
+        message: `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — limit is 25 MB.`,
+      });
+      return;
+    }
+    setUploadState({ kind: "uploading", filename: file.name });
+    try {
+      const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+      const blob = await upload(`uploads/${safeName}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload",
+        contentType: "application/pdf",
+      });
+      setStaged({ url: blob.url, filename: file.name, bytes: file.size });
+      setUploadState({ kind: "idle" });
+    } catch (err) {
+      setUploadState({
+        kind: "error",
+        message: `Upload failed: ${(err as Error).message}`,
+      });
+    }
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const message = draft.trim();
-    if (!message || isBusy) return;
+    if (!message && !staged) return;
+    if (isBusy) return;
+
+    const stagedSnapshot = staged;
     setDraft("");
+    setStaged(null);
+
     try {
-      await agent.send({ message });
+      if (stagedSnapshot) {
+        // Multi-part user content: text prompt + PDF file part. The
+        // model (Claude Sonnet 4.6) reads PDFs natively via vision —
+        // no separate parser needed. Filename rides along so the
+        // model can refer to it in its response.
+        const userContent = [
+          { type: "text" as const, text: message || `Please process the attached file: ${stagedSnapshot.filename}` },
+          {
+            type: "file" as const,
+            mediaType: "application/pdf",
+            filename: stagedSnapshot.filename,
+            data: new URL(stagedSnapshot.url),
+          },
+        ];
+        await agent.send({ message: userContent });
+      } else {
+        await agent.send({ message });
+      }
     } catch {
       /* surfaced via status */
     }
@@ -173,42 +245,94 @@ export function Chat({ userName }: { userName: string }) {
             maxWidth: 880,
             margin: "0 auto",
             display: "flex",
+            flexDirection: "column",
             gap: "0.5rem",
           }}
         >
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={isBusy}
-            placeholder="Ask Dante…"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: "0.85rem 1rem",
-              background: "#13161e",
-              border: "1px solid #2c3340",
-              borderRadius: 8,
-              color: "#e7eaf0",
-              fontSize: "0.95rem",
-            }}
-          />
-          <button
-            type="submit"
-            disabled={isBusy || draft.trim().length === 0}
-            style={{
-              padding: "0.85rem 1.5rem",
-              background: isBusy ? "#2b3340" : "#3b82f6",
-              border: "none",
-              borderRadius: 8,
-              color: "white",
-              fontSize: "0.95rem",
-              fontWeight: 600,
-              cursor: isBusy ? "not-allowed" : "pointer",
-              flexShrink: 0,
-            }}
-          >
-            {isBusy ? "…" : "Send"}
-          </button>
+          {(staged || uploadState.kind !== "idle") && (
+            <AttachmentRow
+              staged={staged}
+              uploadState={uploadState}
+              onClear={() => {
+                setStaged(null);
+                setUploadState({ kind: "idle" });
+              }}
+            />
+          )}
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              hidden
+              onChange={onFileChosen}
+            />
+            <button
+              type="button"
+              onClick={onPickFile}
+              disabled={isBusy || uploadState.kind === "uploading"}
+              title="Attach a PDF (framework agreement, purchase order, freelancer bill)"
+              aria-label="Attach a PDF"
+              style={{
+                padding: "0.85rem 0.9rem",
+                background: "#13161e",
+                border: "1px solid #2c3340",
+                borderRadius: 8,
+                color: "#8d94a3",
+                fontSize: "1.05rem",
+                cursor:
+                  isBusy || uploadState.kind === "uploading"
+                    ? "not-allowed"
+                    : "pointer",
+                flexShrink: 0,
+                lineHeight: 1,
+              }}
+            >
+              {/* Paperclip glyph. Avoid an SVG dep — Unicode is plenty. */}
+              📎
+            </button>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              disabled={isBusy}
+              placeholder={
+                staged
+                  ? "Add a note for this PDF (optional) and press Send…"
+                  : "Ask Dante…"
+              }
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: "0.85rem 1rem",
+                background: "#13161e",
+                border: "1px solid #2c3340",
+                borderRadius: 8,
+                color: "#e7eaf0",
+                fontSize: "0.95rem",
+              }}
+            />
+            <button
+              type="submit"
+              disabled={
+                isBusy ||
+                (draft.trim().length === 0 && !staged) ||
+                uploadState.kind === "uploading"
+              }
+              style={{
+                padding: "0.85rem 1.5rem",
+                background: isBusy ? "#2b3340" : "#3b82f6",
+                border: "none",
+                borderRadius: 8,
+                color: "white",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                cursor: isBusy ? "not-allowed" : "pointer",
+                flexShrink: 0,
+              }}
+            >
+              {isBusy ? "…" : "Send"}
+            </button>
+          </div>
         </div>
       </form>
     </>
@@ -240,6 +364,86 @@ function ThinkingIndicator({ status }: { status: string }) {
         <Dot delay="0.3s" />
       </span>
       {label}…
+    </div>
+  );
+}
+
+function AttachmentRow({
+  staged,
+  uploadState,
+  onClear,
+}: {
+  staged: StagedPdf | null;
+  uploadState:
+    | { kind: "idle" }
+    | { kind: "uploading"; filename: string }
+    | { kind: "error"; message: string };
+  onClear: () => void;
+}) {
+  let body: React.ReactNode;
+  let tone = "#2c3340";
+  if (uploadState.kind === "uploading") {
+    body = (
+      <>
+        <span style={{ display: "inline-flex", gap: "3px" }}>
+          <Dot delay="0s" />
+          <Dot delay="0.15s" />
+          <Dot delay="0.3s" />
+        </span>
+        <span>Uploading {uploadState.filename}…</span>
+      </>
+    );
+  } else if (uploadState.kind === "error") {
+    tone = "#5a2a2a";
+    body = <span style={{ color: "#f2b8b8" }}>{uploadState.message}</span>;
+  } else if (staged) {
+    body = (
+      <>
+        <span aria-hidden>📄</span>
+        <span>
+          <strong style={{ color: "#e7eaf0" }}>{staged.filename}</strong>{" "}
+          <span style={{ color: "#5b6473" }}>
+            · {(staged.bytes / 1024).toFixed(0)} KB
+          </span>
+        </span>
+      </>
+    );
+  } else {
+    return null;
+  }
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        padding: "0.4rem 0.6rem",
+        background: "#13161e",
+        border: `1px solid ${tone}`,
+        borderRadius: 8,
+        color: "#8d94a3",
+        fontSize: "0.82rem",
+      }}
+    >
+      {body}
+      <button
+        type="button"
+        onClick={onClear}
+        title="Remove attachment"
+        aria-label="Remove attachment"
+        style={{
+          marginLeft: "auto",
+          padding: "0.15rem 0.5rem",
+          background: "transparent",
+          border: "1px solid #2c3340",
+          borderRadius: 4,
+          color: "#8d94a3",
+          fontSize: "0.75rem",
+          cursor: "pointer",
+        }}
+      >
+        ✕
+      </button>
     </div>
   );
 }

@@ -20,6 +20,15 @@ const SCOPES = [
   "dante-agents/read:reports",
   "dante-agents/read:employees",
   "dante-agents/read:salaries",
+  // Write scopes for the PDF-ingestion workflows. Cognito's Pre
+  // Token Generation Lambda strips anything the user's group doesn't
+  // permit; non-managers get a session with read-only scopes back.
+  // Keep this list in sync with agent/connections/dante.ts.
+  "dante-agents/write:customers",
+  "dante-agents/write:frameworks",
+  "dante-agents/write:projects",
+  "dante-agents/write:allocations",
+  "dante-agents/write:time_tracking",
 ];
 
 const PENDING_COOKIE =
