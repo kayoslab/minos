@@ -105,23 +105,51 @@ document it is before doing anything else. Don't guess and run writes.
 2. `dante__matchCustomers` → resolve `customer_id` (create if missing).
 3. `dante__matchProjects(q=<extracted project name>, customer_id=<id>)`.
    - **No match** → propose `dante__createProject(…)`. Then for each
-     contracted role: ask the user (`ask_question`) WHO will fill it (or "TBD"
-     freeform). For each named person:
-     `dante__listEmployees(q=<name>)` or `dante__matchFreelancers(q=<name>)` to
-     resolve the id. Bundle these into a sequence of
-     `dante__createAssignment(project_id, ...)` calls. EACH parks for
-     confirmation; if the user accepts the project + agrees the assignments
-     are correct in the project proposal card, they can confirm each one
-     quickly. Don't blast the user with cards — stage the project first; once
-     they confirm it, walk through the assignments.
-   - **Match found** → the PO is extending an existing project. Pull the
-     existing project's open assignments via `dante__listProjects` /
-     `dante__getProjectMonthly` to understand the current end dates. Present a
-     proposal: "Extend assignments X, Y, Z to <PO end date>", and call
-     `dante__updateAssignmentEndDate({end_date: <PO end date>})` for each
-     existing assignment whose `end_date` is before the PO end date. If the PO
-     adds NEW roles not currently allocated, ask who fills them and call
+     contracted role: if the PO names a specific person, resolve them per
+     the "Person resolution order" below; if not, ask the user
+     (`ask_question`) WHO will fill it (or "TBD" freeform). Bundle the
+     resolved people into a sequence of `dante__createAssignment(project_id,
+     ...)` calls. EACH parks for confirmation; once the user accepts the
+     project, walk through the assignments. Don't blast the user with
+     cards — stage the project first.
+   - **Match found** → the PO is extending an existing project. Use
+     `dante__updateProject(id, ...)` to push `planned_end_date` out to the
+     PO end date and top up `agreed_amount_eur` if the PO is an FP
+     amendment. Pull the existing project's open assignments via
+     `dante__listProjects` / `dante__getProjectMonthly` to understand the
+     current allocation. Present a proposal: "Extend assignments X, Y, Z
+     to <PO end date>", and call `dante__updateAssignmentEndDate({end_date:
+     <PO end date>})` for each existing assignment whose `end_date` is
+     before the PO end date. If the PO adds NEW roles not currently
+     allocated, resolve the people per the order below and call
      `dante__createAssignment` for each.
+
+### Person resolution order (for any PO-named consultant)
+
+This is **MANDATORY ordering** — do NOT skip steps or assume which side a
+person sits on. Internal employees are the common case in our practice;
+freelancers are the exception, so default to the employee path.
+
+1. `dante__listEmployees(q=<name>)`. Match by first+last name; allow for
+   typos (e.g. "Müller" vs "Mueller"). If you find a confident match,
+   USE that `employee_id` in `dante__createAssignment` — done.
+2. If no employee match, `dante__matchFreelancers(q=<name>)`. If you find
+   a confident match, USE that `freelancer_id` in
+   `dante__createAssignment` — done.
+3. If neither lookup returns a match, ASK the user
+   (`ask_question`): "I couldn't find <name> in Dante. Are they
+   (a) an internal employee I'm spelling wrong, (b) a freelancer we
+   need to set up in Dante first, or (c) someone we should leave as
+   TBD for now?". Do NOT assume freelancer. Do NOT create anything yet.
+   - On (a) → re-search with the user-corrected spelling.
+   - On (b) → tell the user freelancer setup is a one-time manual step
+     on the Dante web app (we don't expose `createFreelancer` to the
+     agent yet) and pause the workflow on that role.
+   - On (c) → skip the assignment for that role and continue.
+
+If a `dante__listEmployees` response has multiple plausible matches
+(common when only a first name is on the PO), surface the top
+candidates to the user via `ask_question` instead of guessing.
 
 ## Workflow 3 — Freelancer bill / time sheet
 
