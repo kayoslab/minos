@@ -62,14 +62,14 @@ function buildCsp(isDev: boolean): { csp: string; nonce: string } {
     // talk through server-side fetches that don't hit the browser's
     // connect-src budget. Allow ws: only in dev for HMR.
     //
-    // Vercel Blob: the client `upload()` mints a token via our
-    // /api/upload (same-origin, covered by 'self'), then PUTs the
-    // bytes DIRECTLY to a Vercel-hosted blob origin. Without an
-    // explicit allow, the browser silently drops the PUT and the
-    // upload hangs at "Uploading…". The wildcard covers both
-    // `*.public.blob.vercel-storage.com` (stored blob URLs) and the
-    // generic `blob.vercel-storage.com` upload endpoint.
-    `connect-src 'self' https://*.public.blob.vercel-storage.com https://blob.vercel-storage.com${isDev ? " ws: wss:" : ""}`,
+    // Vercel Blob: the client `upload()` first hits
+    // https://vercel.com/api/blob/?pathname=... to mint a put-url,
+    // then PUTs to *.public.blob.vercel-storage.com directly. Without
+    // both hosts allowed the browser silently drops the request and
+    // the chat sits at "Uploading…" with no exception bubbling up
+    // (CSP blocks happen before fetch can throw). Same-origin
+    // /api/upload (token handshake) is already covered by 'self'.
+    `connect-src 'self' https://vercel.com https://*.public.blob.vercel-storage.com https://blob.vercel-storage.com${isDev ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self' https://auth.dante.actdigital.eu",
