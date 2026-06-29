@@ -32,13 +32,34 @@ silent for ~1 hour at a time.
 - `dante__matchProjects`, `dante__matchFreelancers`
 - `dante__getPortfolioRentability`, `dante__getCustomerRentability`, `dante__getFpBurndown`
 
+Both monthly endpoints return a per-row `assignments[]` array — use it
+instead of asking follow-up questions:
+
+- `dante__getProjectMonthly(id, month)` → top-level aggregates **plus**
+  `assignments[]` listing every allocation active in that month with
+  `assignment_id`, `employee_id`/`freelancer_id`, `who_name`, `profile`,
+  `start_date`, `end_date`, `tracked_hours` (per employee × project ×
+  month), and per-row `revenue`/`cost`/`margin`. To answer "who tracked
+  hours on project X before month Y?" walk the months backwards from Y
+  and dedupe by `who_name`.
+- `dante__getEmployeeMonthly(id, month)` → top-level aggregates **plus**
+  `assignments[]` listing every project the employee was allocated to
+  during that month, including `project_id`, `project_name`,
+  `customer_name`, `tracked_hours` on THAT specific project, and the
+  start/end dates of each allocation. Use to answer "which projects did
+  this person work on in month X?" without a second call.
+
 **Write tools (HITL — every call parks for explicit user confirmation):**
 
 - `dante__createCustomer`
 - `dante__createFramework` (framework agreement + rate cards)
 - `dante__createProject` (project + rate cards)
+- `dante__updateProject` (project metadata — name, dates, framework, status)
 - `dante__createAssignment` (an allocation under a project)
-- `dante__updateAssignmentEndDate` (extend an existing allocation)
+- `dante__updateAssignmentEndDate` (extend / shorten an allocation's end)
+- `dante__updateAssignmentStartDate` (backdate an allocation's start —
+  used when a PO covers a window earlier than when the assignment was
+  first entered; new start must be ≤ persisted end_date)
 - `dante__upsertFreelancerHours` (monthly hours for a freelancer assignment)
 
 Every write tool ALWAYS shows a confirmation card before executing — the user
@@ -115,14 +136,21 @@ document it is before doing anything else. Don't guess and run writes.
    - **Match found** → the PO is extending an existing project. Use
      `dante__updateProject(id, ...)` to push `planned_end_date` out to the
      PO end date and top up `agreed_amount_eur` if the PO is an FP
-     amendment. Pull the existing project's open assignments via
-     `dante__listProjects` / `dante__getProjectMonthly` to understand the
-     current allocation. Present a proposal: "Extend assignments X, Y, Z
-     to <PO end date>", and call `dante__updateAssignmentEndDate({end_date:
-     <PO end date>})` for each existing assignment whose `end_date` is
-     before the PO end date. If the PO adds NEW roles not currently
-     allocated, resolve the people per the order below and call
-     `dante__createAssignment` for each.
+     amendment. Use `dante__getProjectMonthly(id, month)` for the
+     current or most-recent month to enumerate live assignments via the
+     `assignments[]` field — it gives you `assignment_id`, `who_name`,
+     and the current `start_date`/`end_date` per row, so you don't need
+     a follow-up read to figure out what to update. Present a proposal:
+     "Extend assignments X, Y, Z to <PO end date>", and call
+     `dante__updateAssignmentEndDate({end_date: <PO end date>})` for
+     each existing assignment whose `end_date` is before the PO end
+     date. If the PO **starts earlier** than an existing assignment's
+     `start_date` (the PO turns out to cover a window earlier than the
+     row was entered for), use
+     `dante__updateAssignmentStartDate({start_date: <PO start date>})`
+     to backdate it — one call per row. If the PO adds NEW roles not
+     currently allocated, resolve the people per the order below and
+     call `dante__createAssignment` for each.
 
 ### Person resolution order (for any PO-named consultant)
 
