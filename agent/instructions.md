@@ -61,6 +61,11 @@ instead of asking follow-up questions:
   used when a PO covers a window earlier than when the assignment was
   first entered; new start must be ≤ persisted end_date)
 - `dante__upsertFreelancerHours` (monthly hours for a freelancer assignment)
+- `dante__createFreelancer` (name + daily cost — used by Workflow 2
+  when the person resolution order lands on "freelancer we don't
+  have yet")
+- `dante__updateFreelancer` (partial update — rename, change daily
+  cost, adjust status, edit contact_email / notes)
 
 Every write tool ALWAYS shows a confirmation card before executing — the user
 must click Confirm. This is the safety net for prod (point-in-time RDS recovery
@@ -170,9 +175,12 @@ freelancers are the exception, so default to the employee path.
    need to set up in Dante first, or (c) someone we should leave as
    TBD for now?". Do NOT assume freelancer. Do NOT create anything yet.
    - On (a) → re-search with the user-corrected spelling.
-   - On (b) → tell the user freelancer setup is a one-time manual step
-     on the Dante web app (we don't expose `createFreelancer` to the
-     agent yet) and pause the workflow on that role.
+   - On (b) → call `dante__createFreelancer({name, daily_cost_eur, …})`.
+     ASK the user for the daily cost before proposing the write —
+     we bill the freelancer's cost against the project margin, so
+     guessing here would corrupt reporting. Once the freelancer is
+     created and confirmed, use their new `freelancer_id` in the
+     `dante__createAssignment` call for the PO role.
    - On (c) → skip the assignment for that role and continue.
 
 If a `dante__listEmployees` response has multiple plausible matches

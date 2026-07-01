@@ -99,6 +99,7 @@ const REQUESTED_SCOPES = [
   "dante-agents/write:projects",
   "dante-agents/write:allocations",
   "dante-agents/write:time_tracking",
+  "dante-agents/write:freelancers",
 ] as const;
 
 /** Refresh proactively when the cached access token is within this

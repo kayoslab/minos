@@ -29,6 +29,7 @@ const SCOPES = [
   "dante-agents/write:projects",
   "dante-agents/write:allocations",
   "dante-agents/write:time_tracking",
+  "dante-agents/write:freelancers",
 ];
 
 const PENDING_COOKIE =
