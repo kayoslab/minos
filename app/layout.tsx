@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Dante Alighieri — analyst over Dante",
+  title: "Minos — analyst over Dante",
   description:
     "AI analyst over the Dante project tool. Sign in with your act " +
     "digital account; the agent reads only data your role can see on " +

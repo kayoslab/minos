@@ -16,7 +16,7 @@
  *      on Cognito's hosted UI. The PKCE verifier never leaves this
  *      process.
  *   2. Starts a localhost reverse proxy on :8766 that forwards every
- *      request to `https://dante-alighieri.vercel.app`, overwriting
+ *      request to `https://minos.vercel.app`, overwriting
  *      the Authorization header with `Bearer <cognito-access-token>`.
  *      The channel's `cognitoBearer()` then resolves the caller as
  *      `principalType: "user"` — same principal the browser chat
@@ -35,9 +35,9 @@ import { request as httpsRequest } from "node:https";
 
 const COGNITO_DOMAIN = mustEnv("DANTE_COGNITO_DOMAIN");
 const CLIENT_ID = mustEnv("DANTE_COGNITO_AGENT_CLIENT_ID");
-const TARGET_URL = process.env.DANTE_TUI_TARGET ?? "https://dante-alighieri.vercel.app";
-const CALLBACK_PORT = Number.parseInt(process.env.DANTE_TUI_CALLBACK_PORT ?? "8765", 10);
-const PROXY_PORT = Number.parseInt(process.env.DANTE_TUI_PROXY_PORT ?? "8766", 10);
+const TARGET_URL = process.env.MINOS_TUI_TARGET ?? "https://minos.vercel.app";
+const CALLBACK_PORT = Number.parseInt(process.env.MINOS_TUI_CALLBACK_PORT ?? "8765", 10);
+const PROXY_PORT = Number.parseInt(process.env.MINOS_TUI_PROXY_PORT ?? "8766", 10);
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}/callback`;
 const SCOPES = [
   "openid",

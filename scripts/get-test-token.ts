@@ -7,7 +7,7 @@
  * on success so you can curl the deployed EVE agent:
  *
  *   ACCESS_TOKEN=$(tsx scripts/get-test-token.ts)
- *   curl -X POST https://dante-alighieri.vercel.app/eve/v1/session \
+ *   curl -X POST https://minos.vercel.app/eve/v1/session \
  *     -H "Authorization: Bearer $ACCESS_TOKEN" \
  *     -H "Content-Type: application/json" \
  *     -d '{"message":"List the active projects in Dante."}'

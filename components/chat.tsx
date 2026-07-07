@@ -142,7 +142,7 @@ export function Chat({ userName }: { userName: string }) {
                 letterSpacing: "-0.01em",
               }}
             >
-              Dante Alighieri
+              Minos
             </h1>
             <p style={{ margin: "0.15rem 0 0", fontSize: "0.75rem", color: "#5b6473" }}>
               Signed in as <code>{userName}</code>
@@ -298,7 +298,7 @@ export function Chat({ userName }: { userName: string }) {
               placeholder={
                 staged
                   ? "Add a note for this PDF (optional) and press Send…"
-                  : "Ask Dante…"
+                  : "Ask Minos…"
               }
               style={{
                 flex: 1,
@@ -485,7 +485,7 @@ function MessageBubble({
       }}
     >
       <header style={{ fontSize: "0.7rem", color: "#5b6473", marginBottom: "0.25rem" }}>
-        {isUser ? "You" : "Dante"}
+        {isUser ? "You" : "Minos"}
       </header>
       {message.parts.map((part, i) => {
         if (part.type === "text") {

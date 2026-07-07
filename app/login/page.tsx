@@ -45,7 +45,7 @@ export default async function LoginPage(props: {
             letterSpacing: "-0.01em",
           }}
         >
-          Dante Alighieri
+          Minos
         </h1>
         <p
           style={{

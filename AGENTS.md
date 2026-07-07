@@ -4,7 +4,7 @@ This project uses the eve framework. Before writing code, read the relevant guid
 from the installed eve package docs at `node_modules/eve/docs/`.
 If package docs are unavailable, use https://eve.dev/docs as a fallback.
 
-# Dante Alighieri — analyst-style agent over Dante
+# Minos — analyst-style agent over Dante
 
 Read-only analyst on top of Dante (act digital's Personio-backed project +
 allocation tool). End users sign in once via the Cognito hosted UI (the same
@@ -66,7 +66,7 @@ next.config.ts                  withEve() + static security headers
 
 ## Sign-in flow
 
-1. User opens `https://dante-alighieri.vercel.app/`.
+1. User opens `https://minos.vercel.app/`.
 2. Middleware sees no Auth.js cookie → redirect to `/login`.
 3. User clicks **Sign in with Cognito** → server action `signIn("cognito", …)`.
 4. Auth.js drives the OAuth Authorization Code flow with PKCE:
@@ -100,9 +100,9 @@ next.config.ts                  withEve() + static security headers
 - `http://localhost:3000/eve/v1/connections/dante/auth/callback` — local TUI / interactive
    auth fallback.
 - `http://localhost:8765/callback` — `scripts/get-test-token.ts` listener.
-- `https://dante-alighieri.vercel.app/eve/v1/connections/dante/auth/callback` — deployed
+- `https://minos.vercel.app/eve/v1/connections/dante/auth/callback` — deployed
    EVE interactive auth fallback.
-- `https://dante-alighieri.vercel.app/api/auth/callback/cognito` — **NEW**: Auth.js
+- `https://minos.vercel.app/api/auth/callback/cognito` — **NEW**: Auth.js
    callback for the browser sign-in flow. Add this to tfvars before first deploy.
 
 ## Local dev
@@ -130,7 +130,7 @@ on the same machine also works (`npx eve`).
    DANTE_API_BASE_URL                https://dante.actdigital.eu
    AI_GATEWAY_API_KEY                <from Vercel AI Gateway>
    ```
-2. **Cognito callback** — add `https://dante-alighieri.vercel.app/api/auth/callback/cognito`
+2. **Cognito callback** — add `https://minos.vercel.app/api/auth/callback/cognito`
    to `agent_callback_urls` in Dante's tfvars. Push to main; GHA applies.
 3. `vercel deploy --prod`.
 
