@@ -166,7 +166,7 @@ AI_GATEWAY_API_KEY             from Vercel AI Gateway
 > address, not this app.
 
 Before the first deploy, the Auth.js callback URL
-`https://minos.vercel.app/api/auth/callback/cognito` must be present in
+`https://minos-agent.vercel.app/api/auth/callback` must be present in
 `agent_callback_urls` in Dante's `terraform/envs/prod/variables.tf`. Forget
 this and the sign-in loop closes on itself with the special cruelty reserved
 for OAuth redirect mismatches.

@@ -66,14 +66,14 @@ next.config.ts                  withEve() + static security headers
 
 ## Sign-in flow
 
-1. User opens `https://minos.vercel.app/`.
+1. User opens `https://minos-agent.vercel.app/`.
 2. Middleware sees no Auth.js cookie → redirect to `/login`.
 3. User clicks **Sign in with Cognito** → server action `signIn("cognito", …)`.
 4. Auth.js drives the OAuth Authorization Code flow with PKCE:
    - Redirects to `https://auth.dante.actdigital.eu/oauth2/authorize?…`
    - Cognito hosted UI: MFA challenge, consent screen listing `dante-agents/*` scopes.
    - Pre Token Generation Lambda subsets scopes against the user's Cognito group.
-5. Cognito redirects back to `/api/auth/callback/cognito?code=…&state=…`.
+5. Cognito redirects back to `/api/auth/callback?code=…&state=…`.
 6. Auth.js exchanges the code, encrypts `{access_token, refresh_token, expires_at}` onto a JWT cookie.
 7. Cookie is httpOnly, Secure, SameSite=Lax. The browser never sees the access token in JS.
 8. User lands on `/chat`.
@@ -100,9 +100,9 @@ next.config.ts                  withEve() + static security headers
 - `http://localhost:3000/eve/v1/connections/dante/auth/callback` — local TUI / interactive
    auth fallback.
 - `http://localhost:8765/callback` — `scripts/get-test-token.ts` listener.
-- `https://minos.vercel.app/eve/v1/connections/dante/auth/callback` — deployed
+- `https://minos-agent.vercel.app/eve/v1/connections/dante/auth/callback` — deployed
    EVE interactive auth fallback.
-- `https://minos.vercel.app/api/auth/callback/cognito` — **NEW**: Auth.js
+- `https://minos-agent.vercel.app/api/auth/callback` — **NEW**: Auth.js
    callback for the browser sign-in flow. Add this to tfvars before first deploy.
 
 ## Local dev
@@ -130,7 +130,7 @@ on the same machine also works (`npx eve`).
    DANTE_API_BASE_URL                https://dante.actdigital.eu
    AI_GATEWAY_API_KEY                <from Vercel AI Gateway>
    ```
-2. **Cognito callback** — add `https://minos.vercel.app/api/auth/callback/cognito`
+2. **Cognito callback** — add `https://minos-agent.vercel.app/api/auth/callback`
    to `agent_callback_urls` in Dante's tfvars. Push to main; GHA applies.
 3. `vercel deploy --prod`.
 
