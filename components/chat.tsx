@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEveAgent } from "eve/react";
 import { upload } from "@vercel/blob/client";
 import ReactMarkdown from "react-markdown";
@@ -19,7 +19,7 @@ type StagedPdf = {
 /** Browser chat against the EVE agent. Same-origin via withEve(), so
  * the session cookie rides on every /eve/v1/* request — no explicit
  * credential plumbing on the client. */
-export function Chat({ userName }: { userName: string }) {
+export function Chat() {
   const agent = useEveAgent();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
@@ -32,6 +32,72 @@ export function Chat({ userName }: { userName: string }) {
 
   const pendingHitl = findPendingHitlRequest(agent.data.messages);
   const pendingConnectionAuth = findPendingConnectionAuth(agent.events);
+
+  // --- Session expiry handling --------------------------------------
+  // The access token behind the /eve/v1/* cookie lapses ~hourly. When
+  // a request fails we ask /api/auth/status, which silently refreshes
+  // the token cookie if the refresh token is still good (invisible
+  // recovery) or reports a dead session so we can prompt a re-sign-in.
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  const checkSession = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/status", { cache: "no-store" });
+      const data = (await res.json()) as { authenticated?: boolean };
+      setSessionExpired(!data.authenticated);
+      return Boolean(data.authenticated);
+    } catch {
+      // Network blip — don't nag; the next real request re-surfaces it.
+      return true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (agent.status === "error") void checkSession();
+  }, [agent.status, checkSession]);
+
+  useEffect(() => {
+    const onFocus = () => void checkSession();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [checkSession]);
+
+  // The re-auth popup posts back here when it finishes (see
+  // app/auth/complete). Same-origin check guards against stray senders.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data === "minos:reauthenticated") setSessionExpired(false);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  const reauth = useCallback(() => {
+    // Popup so the in-memory transcript in this tab survives. Cookies
+    // are per-origin, so once the popup's callback sets them this tab's
+    // next /eve/v1/* request is authenticated again.
+    const popup = window.open(
+      "/api/auth/signin?mode=popup",
+      "minos-reauth",
+      "width=480,height=760",
+    );
+    // Popup blocked → full-page sign-in. Loses the transcript, but at
+    // least recovers the session.
+    if (!popup) window.location.href = "/api/auth/signin";
+  }, []);
+
+  // --- Auto-scroll --------------------------------------------------
+  // Keep the newest message in view when one arrives, but don't yank
+  // the viewport if the user has scrolled up to read earlier history.
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const messageCount = agent.data.messages.length;
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 120) el.scrollTop = el.scrollHeight;
+  }, [messageCount]);
 
   const onPickFile = () => {
     if (isBusy || uploadState.kind === "uploading") return;
@@ -106,12 +172,12 @@ export function Chat({ userName }: { userName: string }) {
   };
 
   return (
-    <>
-      {/* Root holds the chat shell at a guaranteed viewport size — the
-          earlier dvh-only approach left the input below the fold on
-          some browsers (URL bar / soft keyboard quirks), so we lock
-          html/body to the visible viewport in <head> and use
-          position:fixed for the input bar as a hard guarantee. */}
+    // One fixed, viewport-sized flex column: header, transcript, and
+    // the input bar as a real flex child at the bottom. Keeping the
+    // input in the layout (rather than a separate position:fixed bar
+    // overlapping the transcript) is what lets the transcript scroll
+    // cleanly at any length — the earlier overlap + reserved
+    // bottom-padding hack broke scrolling on small overflows.
       <main
         style={{
           position: "fixed",
@@ -144,8 +210,19 @@ export function Chat({ userName }: { userName: string }) {
             >
               Minos
             </h1>
-            <p style={{ margin: "0.15rem 0 0", fontSize: "0.75rem", color: "#5b6473" }}>
-              Signed in as <code>{userName}</code>
+            {/* Minos warns Dante at the threshold of the second circle
+                — Inferno V. Fitting for a tool that judges who may see
+                what before letting anyone past the gate. */}
+            <p
+              style={{
+                margin: "0.15rem 0 0",
+                fontSize: "0.75rem",
+                color: "#5b6473",
+                fontStyle: "italic",
+              }}
+            >
+              &ldquo;Beware in whom thou placest thy trust; let not the
+              breadth of the entrance deceive thee.&rdquo;
             </p>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -168,12 +245,15 @@ export function Chat({ userName }: { userName: string }) {
           </div>
         </header>
 
+        {sessionExpired && <SessionExpiredBanner onReauth={reauth} />}
+
         <div
+          ref={transcriptRef}
           style={{
             flex: 1,
             minHeight: 0,
             overflowY: "auto",
-            padding: "1.25rem 0 5.5rem",
+            padding: "1.25rem 0",
             display: "flex",
             flexDirection: "column",
             gap: "1rem",
@@ -220,122 +300,166 @@ export function Chat({ userName }: { userName: string }) {
             </div>
           )}
         </div>
-      </main>
 
-      {/* Input bar is position:fixed so it always sits at the bottom
-          of the visible viewport, on top of any soft keyboard and
-          regardless of dvh/vh quirks. The transcript area above
-          reserves padding-bottom (~5.5rem) so the last message
-          isn't hidden behind it. */}
-      <form
-        onSubmit={onSubmit}
-        style={{
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "#0b0d12",
-          borderTop: "1px solid #232831",
-          padding: "0.85rem 1.25rem",
-          paddingBottom: "calc(0.85rem + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        <div
+        {/* Input bar as a real flex child (not position:fixed), so it
+            occupies layout space and the transcript above scrolls
+            cleanly at any content height. Full-bleed via negative side
+            margins that cancel <main>'s padding, keeping the top border
+            edge-to-edge; the safe-area inset padding clears the iOS
+            home indicator. */}
+        <form
+          onSubmit={onSubmit}
           style={{
-            maxWidth: 880,
-            margin: "0 auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
+            flexShrink: 0,
+            margin: "0 -1.25rem",
+            background: "#0b0d12",
+            borderTop: "1px solid #232831",
+            padding: "0.85rem 1.25rem",
+            paddingBottom: "calc(0.85rem + env(safe-area-inset-bottom, 0px))",
           }}
         >
-          {(staged || uploadState.kind !== "idle") && (
-            <AttachmentRow
-              staged={staged}
-              uploadState={uploadState}
-              onClear={() => {
-                setStaged(null);
-                setUploadState({ kind: "idle" });
-              }}
-            />
-          )}
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              hidden
-              onChange={onFileChosen}
-            />
-            <button
-              type="button"
-              onClick={onPickFile}
-              disabled={isBusy || uploadState.kind === "uploading"}
-              title="Attach a PDF (framework agreement, purchase order, freelancer bill)"
-              aria-label="Attach a PDF"
-              style={{
-                padding: "0.85rem 0.9rem",
-                background: "#13161e",
-                border: "1px solid #2c3340",
-                borderRadius: 8,
-                color: "#8d94a3",
-                fontSize: "1.05rem",
-                cursor:
-                  isBusy || uploadState.kind === "uploading"
-                    ? "not-allowed"
-                    : "pointer",
-                flexShrink: 0,
-                lineHeight: 1,
-              }}
-            >
-              {/* Paperclip glyph. Avoid an SVG dep — Unicode is plenty. */}
-              📎
-            </button>
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              disabled={isBusy}
-              placeholder={
-                staged
-                  ? "Add a note for this PDF (optional) and press Send…"
-                  : "Ask Minos…"
-              }
-              style={{
-                flex: 1,
-                minWidth: 0,
-                padding: "0.85rem 1rem",
-                background: "#13161e",
-                border: "1px solid #2c3340",
-                borderRadius: 8,
-                color: "#e7eaf0",
-                fontSize: "0.95rem",
-              }}
-            />
-            <button
-              type="submit"
-              disabled={
-                isBusy ||
-                (draft.trim().length === 0 && !staged) ||
-                uploadState.kind === "uploading"
-              }
-              style={{
-                padding: "0.85rem 1.5rem",
-                background: isBusy ? "#2b3340" : "#3b82f6",
-                border: "none",
-                borderRadius: 8,
-                color: "white",
-                fontSize: "0.95rem",
-                fontWeight: 600,
-                cursor: isBusy ? "not-allowed" : "pointer",
-                flexShrink: 0,
-              }}
-            >
-              {isBusy ? "…" : "Send"}
-            </button>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.5rem",
+            }}
+          >
+            {(staged || uploadState.kind !== "idle") && (
+              <AttachmentRow
+                staged={staged}
+                uploadState={uploadState}
+                onClear={() => {
+                  setStaged(null);
+                  setUploadState({ kind: "idle" });
+                }}
+              />
+            )}
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                hidden
+                onChange={onFileChosen}
+              />
+              <button
+                type="button"
+                onClick={onPickFile}
+                disabled={isBusy || uploadState.kind === "uploading"}
+                title="Attach a PDF (framework agreement, purchase order, freelancer bill)"
+                aria-label="Attach a PDF"
+                style={{
+                  padding: "0.85rem 0.9rem",
+                  background: "#13161e",
+                  border: "1px solid #2c3340",
+                  borderRadius: 8,
+                  color: "#8d94a3",
+                  fontSize: "1.05rem",
+                  cursor:
+                    isBusy || uploadState.kind === "uploading"
+                      ? "not-allowed"
+                      : "pointer",
+                  flexShrink: 0,
+                  lineHeight: 1,
+                }}
+              >
+                {/* Paperclip glyph. Avoid an SVG dep — Unicode is plenty. */}
+                📎
+              </button>
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                disabled={isBusy}
+                placeholder={
+                  staged
+                    ? "Add a note for this PDF (optional) and press Send…"
+                    : "Ask Minos…"
+                }
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "0.85rem 1rem",
+                  background: "#13161e",
+                  border: "1px solid #2c3340",
+                  borderRadius: 8,
+                  color: "#e7eaf0",
+                  fontSize: "0.95rem",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={
+                  isBusy ||
+                  sessionExpired ||
+                  (draft.trim().length === 0 && !staged) ||
+                  uploadState.kind === "uploading"
+                }
+                style={{
+                  padding: "0.85rem 1.5rem",
+                  background: isBusy ? "#2b3340" : "#3b82f6",
+                  border: "none",
+                  borderRadius: 8,
+                  color: "white",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  cursor: isBusy ? "not-allowed" : "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                {isBusy ? "…" : "Send"}
+              </button>
+            </div>
           </div>
-        </div>
-      </form>
-    </>
+        </form>
+      </main>
+  );
+}
+
+/** Shown when the session has fully lapsed (refresh token dead). The
+ * button opens the Cognito flow in a popup so the transcript on this
+ * screen survives the re-sign-in. */
+function SessionExpiredBanner({ onReauth }: { onReauth: () => void }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        flexWrap: "wrap",
+        margin: "0.75rem 0 0",
+        padding: "0.7rem 0.9rem",
+        background: "#2a2118",
+        border: "1px solid #5a4a2a",
+        borderRadius: 8,
+        color: "#f0d9a8",
+        fontSize: "0.85rem",
+      }}
+    >
+      <span style={{ flex: 1, minWidth: "12rem" }}>
+        Your session expired. Sign in again to keep going — your
+        conversation stays right here.
+      </span>
+      <button
+        type="button"
+        onClick={onReauth}
+        style={{
+          padding: "0.4rem 0.9rem",
+          background: "#3b82f6",
+          border: "none",
+          borderRadius: 6,
+          color: "white",
+          fontSize: "0.8rem",
+          fontWeight: 600,
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        Sign in again
+      </button>
+    </div>
   );
 }
 

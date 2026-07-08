@@ -64,7 +64,7 @@ export async function GET(req: Request) {
   const pendingRaw = c.get(PENDING_COOKIE)?.value;
   if (!pendingRaw) return bounceToLogin(req, "missing_state");
 
-  let pending: { verifier?: string; state?: string };
+  let pending: { verifier?: string; state?: string; mode?: string };
   try {
     pending = JSON.parse(pendingRaw);
   } catch {
@@ -120,7 +120,11 @@ export async function GET(req: Request) {
     expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
   });
 
-  const response = NextResponse.redirect(new URL("/chat", req.url));
+  // Popup re-auth (session expiry) lands on a tiny page that notifies
+  // the opener and closes, so the chat's in-memory transcript survives.
+  // First-time browser sign-in goes straight to the chat.
+  const redirectTo = pending.mode === "popup" ? "/auth/complete" : "/chat";
+  const response = NextResponse.redirect(new URL(redirectTo, req.url));
   response.cookies.set(SESSION_COOKIE_NAME, sessionToken, SESSION_COOKIE_OPTS);
   response.cookies.set(
     ACCESS_TOKEN_COOKIE_NAME,

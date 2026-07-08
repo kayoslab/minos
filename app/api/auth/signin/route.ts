@@ -58,6 +58,10 @@ export async function GET(req: Request) {
   const { verifier, challenge } = generatePkce();
   const state = generateState();
 
+  // `?mode=popup` marks a re-auth opened in a popup window; the
+  // callback honours it to land on /auth/complete instead of /chat.
+  const mode = new URL(req.url).searchParams.get("mode");
+
   const callbackUrl = new URL("/api/auth/callback", req.url).toString();
   const authorize = buildAuthorizeUrl({
     cognitoDomain,
@@ -74,7 +78,7 @@ export async function GET(req: Request) {
   const response = NextResponse.redirect(authorize);
   response.cookies.set(
     PENDING_COOKIE,
-    JSON.stringify({ verifier, state }),
+    JSON.stringify({ verifier, state, ...(mode === "popup" ? { mode } : {}) }),
     PENDING_OPTS,
   );
   return response;

@@ -13,5 +13,5 @@ export default async function ChatPage() {
   if (!session) {
     redirect("/login");
   }
-  return <Chat userName={session.email ?? session.cognito_sub} />;
+  return <Chat />;
 }
