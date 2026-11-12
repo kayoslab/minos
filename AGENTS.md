@@ -6,7 +6,7 @@ If package docs are unavailable, use https://eve.dev/docs as a fallback.
 
 # Minos — analyst-style agent over Dante
 
-Read-only analyst on top of Dante (act digital's Personio-backed project +
+Read-only analyst on top of Dante (a Personio-backed project +
 allocation tool). End users sign in once via the Cognito hosted UI (the same
 sign-in screen they'd use on the Dante web app, MFA mandatory). The same
 Cognito access token authenticates the browser → EVE route AND is re-used by
@@ -66,11 +66,11 @@ next.config.ts                  withEve() + static security headers
 
 ## Sign-in flow
 
-1. User opens `https://minos-agent.vercel.app/`.
+1. User opens the deployed Minos URL (`https://<your-minos-domain>/`).
 2. Middleware sees no Auth.js cookie → redirect to `/login`.
 3. User clicks **Sign in with Cognito** → server action `signIn("cognito", …)`.
 4. Auth.js drives the OAuth Authorization Code flow with PKCE:
-   - Redirects to `https://auth.dante.actdigital.eu/oauth2/authorize?…`
+   - Redirects to `$DANTE_COGNITO_DOMAIN/oauth2/authorize?…`
    - Cognito hosted UI: MFA challenge, consent screen listing `dante-agents/*` scopes.
    - Pre Token Generation Lambda subsets scopes against the user's Cognito group.
 5. Cognito redirects back to `/api/auth/callback?code=…&state=…`.
@@ -89,7 +89,7 @@ next.config.ts                  withEve() + static security headers
 3. EVE runs the agent. Model picks a tool (e.g. `dante__listProjects`).
 4. Dante connection's `getToken({principal})` finds the cached token by sub → returns it.
    No second OAuth flow.
-5. Connection calls `https://dante.actdigital.eu/api/agent/projects` with `Authorization:
+5. Connection calls `$DANTE_API_BASE_URL/api/agent/projects` with `Authorization:
    Bearer <token>`. Dante's `requireAgentSession` verifies the same token (same JWKS, same
    `client_id`), re-checks role hierarchy against the requested scope, returns data.
 
@@ -100,9 +100,9 @@ next.config.ts                  withEve() + static security headers
 - `http://localhost:3000/eve/v1/connections/dante/auth/callback` — local TUI / interactive
    auth fallback.
 - `http://localhost:8765/callback` — `scripts/get-test-token.ts` listener.
-- `https://minos-agent.vercel.app/eve/v1/connections/dante/auth/callback` — deployed
+- `https://<your-minos-domain>/eve/v1/connections/dante/auth/callback` — deployed
    EVE interactive auth fallback.
-- `https://minos-agent.vercel.app/api/auth/callback` — **NEW**: Auth.js
+- `https://<your-minos-domain>/api/auth/callback` — Auth.js
    callback for the browser sign-in flow. Add this to tfvars before first deploy.
 
 ## Local dev
@@ -121,16 +121,19 @@ on the same machine also works (`npx eve`).
 
 ## Production deploy
 
+Never hard-code hostnames — all deployment-specific values come from env vars
+(full list in `.env.example` and README "Configuration").
+
 1. **Vercel env vars** (Production scope):
    ```
    AUTH_SECRET                       openssl rand -base64 64 (different from dev)
-   DANTE_COGNITO_ISSUER              cognito-idp.<region>.amazonaws.com/<pool>
-   DANTE_COGNITO_DOMAIN              https://auth.dante.actdigital.eu
+   DANTE_COGNITO_ISSUER              https://cognito-idp.<region>.amazonaws.com/<pool>
+   DANTE_COGNITO_DOMAIN              https://auth.example.com
    DANTE_COGNITO_AGENT_CLIENT_ID     terraform output -raw agent_client_id
-   DANTE_API_BASE_URL                https://dante.actdigital.eu
+   DANTE_API_BASE_URL                https://dante.example.com
    AI_GATEWAY_API_KEY                <from Vercel AI Gateway>
    ```
-2. **Cognito callback** — add `https://minos-agent.vercel.app/api/auth/callback`
+2. **Cognito callback** — add `https://<your-minos-domain>/api/auth/callback`
    to `agent_callback_urls` in Dante's tfvars. Push to main; GHA applies.
 3. `vercel deploy --prod`.
 

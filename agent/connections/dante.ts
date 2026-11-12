@@ -163,7 +163,7 @@ const danteWriteApproval: Approval = ({ toolName }) => {
 export default defineOpenAPIConnection({
   description:
     "Dante: project, customer, allocation, and rentability data for " +
-    "the act digital consulting practice. READ tools answer questions " +
+    "the consulting practice. READ tools answer questions " +
     "about active projects, monthly P&L, and customer rentability. " +
     "WRITE tools ingest framework agreements, purchase orders, and " +
     "freelancer bills into Dante — they ALWAYS park the run for an " +

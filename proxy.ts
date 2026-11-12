@@ -74,7 +74,8 @@ function buildCsp(isDev: boolean): { csp: string; nonce: string } {
     `connect-src 'self' https://vercel.com https://*.public.blob.vercel-storage.com https://blob.vercel-storage.com${isDev ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
-    "form-action 'self' https://auth.dante.actdigital.eu",
+    // The sign-in form posts to the Cognito hosted UI.
+    `form-action 'self'${process.env.DANTE_COGNITO_DOMAIN ? ` ${process.env.DANTE_COGNITO_DOMAIN}` : ""}`,
     "object-src 'none'",
     ...(isDev ? [] : ["upgrade-insecure-requests"]),
   ];

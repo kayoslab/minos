@@ -70,7 +70,7 @@ Browser ──(Auth.js cookie)──▶ /eve/v1/session
                                    │
               dante connection getToken(sub) ──▶ cached token
                                    │
-        GET/POST https://dante.actdigital.eu/api/agent/*  (Bearer <token>)
+        GET/POST $DANTE_API_BASE_URL/api/agent/*  (Bearer <token>)
                                    │
            Dante re-verifies the SAME token, re-checks the role,
                     and only then reads or writes data
@@ -148,25 +148,67 @@ Requires **Node.js 24.x**.
 
 ---
 
-## Deploying to production
+## Configuration
 
-Deployed on Vercel. Production-scope environment variables:
+Nothing deployment-specific is hard-coded: every hostname, client ID, and
+secret comes from environment variables. Locally they live in `.env.local`
+(git-ignored); on Vercel they live in the project's environment settings.
+[`.env.example`](./.env.example) lists all of them with placeholders.
 
-```
-AUTH_SECRET                    openssl rand -base64 64 (distinct from dev — do not reuse)
-DANTE_COGNITO_ISSUER           cognito-idp.<region>.amazonaws.com/<pool>
-DANTE_COGNITO_DOMAIN           https://auth.dante.actdigital.eu
-DANTE_COGNITO_AGENT_CLIENT_ID  terraform output -raw agent_client_id
-DANTE_API_BASE_URL             https://dante.actdigital.eu
-AI_GATEWAY_API_KEY             from Vercel AI Gateway
-```
+| Variable                        | Required | What it is                                                                                      |
+| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `AUTH_SECRET`                   | yes      | Key that encrypts the session cookie. `openssl rand -base64 64`; use a different one per env.   |
+| `DANTE_COGNITO_ISSUER`          | yes      | Cognito user pool issuer, `https://cognito-idp.<region>.amazonaws.com/<pool-id>`.                |
+| `DANTE_COGNITO_DOMAIN`          | yes      | Cognito hosted-UI domain, e.g. `https://auth.example.com`. Also allowed in the CSP `form-action`. |
+| `DANTE_COGNITO_AGENT_CLIENT_ID` | yes      | Cognito app client for the agent (`terraform output -raw agent_client_id` in Dante).             |
+| `DANTE_API_BASE_URL`            | yes      | Dante's base URL, e.g. `https://dante.example.com` (no `/api/agent` suffix).                    |
+| `AI_GATEWAY_API_KEY`            | local    | Vercel AI Gateway key. On Vercel the gateway authenticates via OIDC instead.                    |
+| `BLOB_READ_WRITE_TOKEN`         | uploads  | Vercel Blob token for PDF uploads; added automatically when a Blob store is connected.          |
+| `CRON_SECRET`                   | uploads  | Bearer secret guarding `/api/cron/cleanup-uploads`.                                              |
+| `UPLOAD_RETENTION_DAYS`         | no       | Days to keep uploaded PDFs (default `7`).                                                        |
+| `MINOS_TUI_TARGET`              | `tui`    | Deployed Minos URL that `npm run tui` proxies to.                                                |
+| `MINOS_TUI_CALLBACK_PORT`       | no       | Local OAuth callback port for `npm run tui` (default `8765`).                                    |
+| `MINOS_TUI_PROXY_PORT`          | no       | Local proxy port for `npm run tui` (default `8766`).                                             |
+| `GET_TOKEN_PORT`                | no       | Local callback port for `scripts/get-test-token.ts` (default `8765`).                           |
 
 > The `DANTE_*` variables point at the **upstream Dante** system (its Cognito
 > pool and API) — they keep the Dante name because that's the service they
 > address, not this app.
 
-Before the first deploy, the Auth.js callback URL
-`https://minos-agent.vercel.app/api/auth/callback` must be present in
+### Setting them locally
+
+```bash
+cp .env.example .env.local
+# then fill in the values
+```
+
+`npm run dev` picks up `.env.local` automatically. The scripts under
+`scripts/` don't, so load it into your shell first:
+`set -a; source .env.local; set +a`.
+
+### Setting them on Vercel
+
+Either in the dashboard (**Project → Settings → Environment Variables**) or
+with the CLI, once per variable and environment:
+
+```bash
+vercel env add DANTE_API_BASE_URL production
+vercel env pull .env.local   # pull the development values down locally
+```
+
+Redeploy after changing a variable — running deployments keep the values
+they were built with.
+
+---
+
+## Deploying to production
+
+Deployed on Vercel. Set the required variables above in the Production
+environment, then `vercel deploy --prod`.
+
+Minos derives its own URL from the incoming request, so it needs no
+"app URL" variable. Cognito still has to know it, though: before the first
+deploy, add `https://<your-minos-domain>/api/auth/callback` to
 `agent_callback_urls` in Dante's `terraform/envs/prod/variables.tf`. Forget
 this and the sign-in loop closes on itself with the special cruelty reserved
 for OAuth redirect mismatches.

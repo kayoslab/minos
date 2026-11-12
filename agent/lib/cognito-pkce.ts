@@ -28,7 +28,7 @@ export function generatePkce(): PkcePair {
 }
 
 export type AuthorizeUrlInput = {
-  /** Cognito hosted-UI base — e.g. `https://auth.dante.actdigital.eu`. */
+  /** Cognito hosted-UI base — e.g. `https://auth.example.com`. */
   cognitoDomain: string;
   /** The agent app client id from Cognito. */
   clientId: string;
