@@ -9,8 +9,8 @@ the entrance, judges, and dispatches each according to how he coils his tail.
 He is the one who decides where every soul is assigned. So does this.
 
 Minos is the intake-and-assignment agent that sits in front of
-[Dante](../dante), act digital deutschland's Personio-backed project and
-allocation tool. You talk to it in plain language — and when you drop a
+[Dante](../dante), a Personio-backed project and allocation tool. You talk
+to it in plain language — and when you drop a
 contract PDF (framework agreement, purchase order, freelancer bill) into the
 chat, it **examines** the paperwork, **classifies** what it's looking at,
 **routes** the people and projects to the right records, and **writes** the
@@ -191,6 +191,5 @@ Still POC-quality in a few honest places:
 
 ## License
 
-Proprietary — © act digital deutschland. All rights reserved. Copy it, sell it,
-or reverse-engineer it without written consent and Minos will coil his tail an
-uncomfortable number of times. See [`LICENSE.md`](./LICENSE.md).
+Released under the [MIT License](LICENSE.md) by
+[Simon Krüger](https://github.com/kayoslab). Copyright (c) 2026 Simon Krüger.
